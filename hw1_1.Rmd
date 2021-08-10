@@ -1,0 +1,176 @@
+---
+title: ""
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+### Методы статистической обработки информации
+___
+## Практика 1. Моделирование и описательная статистика
+#### Выполнил Глушков Егор Александрович, гр. 20М.04-мм
+Варианты №4, 7
+
+#### №4. Отрицательно биномиальное распределение
+$\beta_{neg}(k=3, p=0.4);\;P\{\xi=j\}=\frac{\Gamma(k+j)}{\Gamma(k)j!}p^k(1-p)^j,\;j=0,1,...,\infty$
+
+
+Моделируем данные по заданным параметрам $k=3,\;p=0.4$
+```{r}
+library(moments)
+
+N <- 1500
+sz <- 3; p <- 0.4
+X <- rnbinom(n=N, size=sz, prob=p)
+```
+
+На модельных данных строим гистограмму
+```{r}
+hist(X)
+```
+
+### Описательная статистика
+
+Находим матожидание, дисперсию, стандартное отклонение, ошибку среднего и сравниваем с гипотетическими параметрами
+```{r}
+expectation <- c(mean(X), sz * (1 - p) / p)
+variance <- c(sd(X)^2, sz * (1 - p) / p^2)
+st_dev <- c(sd(X), sqrt(variance[2]))
+err <- c(st_dev[1] / sqrt(N), st_dev[2] / sqrt(N))
+
+df1 <- data.frame(expectation, variance, st_dev, err, row.names = c("simulated", "hypothetical")); df1
+```
+
+Находим медиану, минимум, максимум, размах
+```{r}
+c(median=median(X), min=min(X), max=max(X), R=max(X)-min(X))
+```
+
+Находим квартили и интерквартильный размах
+```{r}
+q <- quantile(X, probs=seq(0, 1, 0.25)); q
+Q <- q[4] - q[2]; unname(Q)
+```
+
+```{r}
+c(q25<-qnbinom(0.25, size=sz, prob=p), q75<-qnbinom(0.75, size=sz, prob=p), intqR=q75-q25)
+```
+
+Центральные моменты 2-4 порядков по формуле и через библиотеку [совпадают]
+```{r}
+m2 <- moment(X, order=2, central=TRUE)
+m3 <- moment(X, order=3, central=TRUE)
+m4 <- moment(X, order=4, central=TRUE)
+c(mean((X-mean(X))^3), m3)
+c(mean((X-mean(X))^4), m4)
+```
+
+Подсчет коэффициентов асимметрии и эксцесса по формулам и через библиотеку [совпадают]
+```{r}
+print(paste("skewness: ", m3 / m2 ^ 1.5, " (formula), ", skewness(X), " (lib)"))
+print(paste("kurtosis: ", m4 / m2 ^ 2 - 3, " (formula), ", kurtosis(X) - 3, " (lib; corrected)"))
+```
+
+```{r}
+gamma1 <- (2 - p) / sqrt(sz * (1 - p))
+gamma2 <- 6 / sz + p ^ 2 / (sz * (1 - p))
+print(paste("excess sk and kur: ", gamma1, gamma2, " (by formulae)"))
+```
+
+
+Характеристики асимметрии и эксцесса в целом соответствуют форме заданного распределения.
+
+
+### Оценка параметров
+#### Метод моментов
+
+Приравниваем выборочные моменты к соответствующим моментам распределения (при 2 неизвестных параметрах, т.е. используем 2 момента): $\alpha_1 = \frac{k(1-p)}{p}$ приравниваем к $\overline{x}$, $\mu_2 = \frac{k(1-p)}{p^2} = \frac{\overline{x}}{p}$ приравниваем к $m_2$. Получаем 
+$p_{mm} = \frac{\overline{x}}{m_2}$, 
+$k_{mm} = \frac{\overline{x}^2}{m_2 - \overline{x}}$
+
+
+```{r}
+p. <- mean(X) / m2
+k. <- mean(X)^2 / (m2 - mean(X))
+c(p.=p., k.=k.)
+```
+
+Моделируем исследуемое распределение с теоретическими и с оценочными (по методу моментов) параметрами. Строим график
+```{r}
+xx. <- rnbinom(1500, size=k., prob=p.)
+
+hist(X, freq=FALSE, xlim=c(-1, 25), main="Method of moments")
+lines(density(X), col=2)
+lines(density(xx.), col=3)
+legend('topright',c("hyp","mm"),pch=20,col=c(2,3))
+
+```
+
+#### Метод максимального правдоподобия
+
+Оценки параметров по методу максимального правдоподобия
+```{r}
+Func.prob.log <- function(x) - sum(dnbinom(X, size = x[1], prob = x[2], log = TRUE))
+res <- optim(c(k., p.), Func.prob.log) # k. and p. as initial values
+k.. <- res$par[1]; p.. <- res$par[2];
+c(k..=k.., p..=p..)
+```
+
+Построим график со сравнением теоретического распределения с распределениями, построенными по параметрам, полученным в методах моментов (mm) и максимального правдоподобия (mle)
+```{r}
+xx.. <- rnbinom(1500, size=k.., prob=p..)
+
+hist(X, freq=FALSE, xlim=c(-1, 25), main="MM, MLE")
+lines(density(X), col=2)
+lines(density(xx.), col=3)
+lines(density(xx..), col=4)
+legend('topright',c("hyp","mm", "mle"),pch=20,col=c(2,3,4))
+```
+
+В случае, когда параметр k (т.е. size) известен и требуется найти p, то оценка параметра p по методу максимального правдоподобия, будет иметь вид: $p_{mle} = \frac {k} {k + \overline{x}}$
+```{r}
+k <- sz
+p_mle <- k/(k+mean(X)); p_mle
+```
+Заметим, что оценки, полученные как по методу моментов, так и по методу максимального правдоподобия, достаточно близки к теоретическим. Для получения более точных оценок следует увеличить объем моделируемых данных
+
+### Проверка согласия эмпирического и теоретического распределения по критерию хм-квадрат Пирсона
+
+```{r}
+# эмпирические частоты
+h <- hist(X, plot=FALSE)
+
+# гипотетические частоты
+p.i <- sapply(seq(length(h$breaks)-1) + 1, function(i) pnbinom(h$breaks[i], size=k, prob=p) - pnbinom(h$breaks[i-1], size=k, prob=p))
+p.i[1] <- pnbinom(h$breaks[2], size=k, prob=p)
+p.i[length(p.i)] <- 1 - pnbinom(h$breaks[length(h$breaks) - 1], size=k, prob=p)
+sum(p.i) # должно быть равно 1
+
+```
+
+Проверка условия $np_i \geq 5$ (для применения критерия согласия Пирсона)
+```{r}
+tab <- cbind(h$counts, length(X) * p.i); tab
+```
+
+Объединяем строки с малыми значениями
+```{r}
+Tab <- rbind(tab[1:8, ], c(sum(tab[9:nrow(tab), 1]), sum(tab[9:nrow(tab), 2]))); Tab
+```
+
+Наблюдаемое значение статистики $\chi^2$
+```{r}
+chi2 <- sum(apply(Tab, 1, function(x) (x[1] - x[2])^2 / x[2])); chi2
+```
+
+
+```{r}
+alpha <- 0.05
+p_value <- 1 - pchisq(chi2, nrow(Tab) - 2 - 1); 
+print(paste("p_value", round(p_value, 3), sep=" = "))
+if (p_value > alpha) print(paste("The hypothesis of the agreement of the empirical distribution with the theoretical one is not rejected with the significance level alpha", alpha, sep="=")) else print("The hypothesis of the agreement of the empirical distribution with the theoretical one is rejected")
+``` 
+
+$p.value = `r round(p_value, 3)`$, поэтому гипотеза о согласии эмпирического и теоретического распределения НЕ отвергается при заданном $\alpha = `r alpha`$.
+

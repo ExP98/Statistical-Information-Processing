@@ -1,0 +1,139 @@
+---
+title: ""
+output: html_notebook
+---
+
+#### Практическая работа №6
+### 8. Дискриминантный анализ
+
+> Глушков Егор Александрович, гр. 20.М04-мм  
+
+---
+
+- Построить дискриминантную функцию.
+
+- Оценить граничное значение.
+
+- Построить матрицу классификации
+
+- Вычислить точность классификации.
+
+---
+
+> Построение модели с помощью встроенной функции *lda*
+
+```{r}
+library(readxl)
+addicts <- read_excel("addicts.xlsx")
+# View(addicts)
+```
+
+Исследуем переменные на наличие пропусков. Выделим нужные переменные. В качестве категориальной переменной возьмем *curwor* -- занятость.
+```{r}
+X <- data.frame(na.omit(addicts[ , c("sstati", "asi1_med", "asi2_emp", "asid3_dyr", "asi7_psy", "curwor")]))
+
+summary(X)
+summary(as.factor(X$curwor))
+```
+Применим функцию Линейного Дискриминантного анализа *lda* с curwor в качестве группирующей переменной
+```{r}
+library(MASS)
+
+LDA <- lda(X$curwor ~ ., subset(X, select=-c(curwor))); LDA
+```
+
+Веса дискриминантной функции:
+```{r}
+alpha.LDA <- LDA$scaling; alpha.LDA
+```
+
+Матрица классификации (*confusion matrix*):
+```{r}
+pred <- predict(LDA, X)
+tab <- table(real=X$curwor, prediction=pred$class); tab
+```
+Точность классификации (*accuracy*):
+```{r}
+acc <- (tab[1] + tab[4]) / sum(tab); acc
+```
+Заметим, что точность вообще говоря низка: baseline-классификатор с одним ответом о принадлежности к бОльшему классу (тут это 0) для абсолютно всех измерений дал бы 0.7292419.
+
+
+Соотнесём значения дискриминантной функции, предсказанный класс (т.е. значение curwor -- 0 или 1), реальный класс (значение curwor в действительности):
+```{r}
+LDA.val <- cbind(pred$x, pred.class=as.numeric(pred$class) - 1, real.class=X$curwor); LDA.val[seq(20), ]
+```
+
+> Построение дискриминантной функции "своими руками"
+
+Ввиду сложности "достать" граничное значение *с* из встроенной функции *lda*, самостоятельно реализуем модель линейного дискриминантного анализа для двух классов.  
+Выборочная ковариационная матрица:
+$$\Sigma = \frac{1}{n_1 + n_2 - 2} ((n_1 - 1)\Sigma_1 + (n_2 - 1)\Sigma_2)$$
+где $\Sigma_1$ и $\Sigma_2$ -- ковариационные матрицы каждой популяции (значения curwor).
+
+Веса дискриминантной функции находятся путём решения СЛАУ $\Sigma \alpha = \mu_1 - \mu_2$
+$$z = \alpha^TX, \quad z_i = \alpha^T \mu_i, \quad i=1,2.$$
+
+```{r}
+W1 <- subset(X, curwor == 0, select=-c(curwor))
+W2 <- subset(X, curwor == 1, select=-c(curwor))
+
+n1 <- nrow(W1)
+n2 <- nrow(W2)
+n <- n1 + n2
+
+mu1 <- colMeans(W1)
+mu2 <- colMeans(W2)
+
+S1 <- cov(W1)
+S2 <- cov(W2)
+
+# S1 <- 0
+# for (i in seq(n1)) {
+#   x <- as.matrix(W1[i, ] - mu1)
+#   S1 <- S1 + t(x) %*% x
+# }
+# S1 <- S1 / (n1 - 1)
+
+S <- ((n1 - 1) * S1 + (n2 - 1) * S2) / (n - 2)
+# S %*% alpha = mu1 - mu2
+alpha <- solve(S, mu1 - mu2); alpha
+```
+
+**Граничное значение** $$c = \frac{z_1 + z_2}{2} + \ln {\frac{q_2}{q_1}}$$
+где $q_1$ и $q_2$ -- приорные вероятности: $q_i = \frac{n_i}{n}, \quad i = 1, 2$
+```{r}
+z1 <- t(alpha) %*% mu1
+z2 <- t(alpha) %*% mu2
+
+sigma2 <- t(alpha) %*% S %*% alpha
+
+q1 <- n1 / n
+q2 <- n2 / n
+
+c <- as.numeric((z1 + z2) / 2 + log(q2 / q1)); c
+```
+
+Проверим модель на исходных данных. Матрица классификации (*confusion matrix*):
+```{r}
+X.red <- subset(X, select=-c(curwor))
+mypred <- ifelse(as.matrix(X.red) %*% alpha >= c, 0, 1)
+tb <- table(pred=mypred, real=X$curwor); tb
+```
+
+Точность классификации (*accuracy*)
+```{r}
+acc <- (tb[1] + tb[4]) / sum(tb); acc
+```
+Заметим, что "самодельный" *LDA* сделал прогноз, идентичный прогнозу встроенной функции *LDA*, несмотря на разные веса *alpha*.
+
+Проверим идентичность меток классов:
+```{r}
+sum(mypred - (as.numeric(pred$class) - 1))
+```
+Сумма поэлементного вычитания меток равна 0, то есть метки идентичны.
+
+Проиллюстрируем это, выведя метки классов "самописного" *lda*, метки встроенного *lda*, а также настоящие метки [первые два столбца в точности совпадают].
+```{r}
+cbind(handmade.pred=as.numeric(mypred), LDA.pred=as.numeric(pred$class) - 1, real.labels=X$curwor)[seq(30),]
+```

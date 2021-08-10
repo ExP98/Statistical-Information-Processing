@@ -1,0 +1,164 @@
+---
+title: ""
+output:
+  html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+### Методы статистической обработки информации
+___
+## Практика 1. Моделирование и описательная статистика
+#### Выполнил Глушков Егор Александрович, гр. 20М.04-мм
+Варианты №4, 7
+
+#### №7.Равномерное распределение U(a, b)
+
+$u(x|a=1,b=3) = \frac{1}{b-a}, a \leq x \leq b$
+
+Моделируем данные по заданным параметрам $a=1,\;b=3$
+```{r}
+library(moments)
+
+N <- 1500
+a <- 1; b <- 3
+X <- runif(n=N, min=a, max=b)
+```
+
+На модельных данных строим гистограмму
+```{r}
+hist(X)
+```
+
+### Описательная статистика
+
+Находим матожидание, дисперсию, стандартное отклонение, ошибку среднего и сравниваем с гипотетическими параметрами
+```{r}
+expectation <- c(mean(X), (a + b)/2)
+variance <- c(sd(X)^2, (b - a)^2 / 12)
+st_dev <- c(sd(X), sqrt(variance[2]))
+err <- c(st_dev[1] / sqrt(N), st_dev[2] / sqrt(N))
+
+df1 <- data.frame(expectation, variance, st_dev, err, row.names = c("simulated", "hypothetical")); df1
+```
+
+Находим медиану, минимум, максимум, размах
+```{r}
+c(median=median(X), min=min(X), max=max(X), R=max(X)-min(X))
+```
+
+Находим квартили и интерквартильный размах
+```{r}
+q <- quantile(X, probs=seq(0, 1, 0.25)); q
+Q <- q[4] - q[2]; unname(Q)
+```
+
+```{r}
+c(q25<-qunif(0.25, min=a, max=b), q75<-qunif(0.75, min=a, max=b), intqR=q75-q25)
+```
+
+Центральные моменты 2-4 порядков по формуле и через библиотеку [совпадают]
+```{r}
+m2 <- moment(X, order=2, central=TRUE)
+m3 <- moment(X, order=3, central=TRUE)
+m4 <- moment(X, order=4, central=TRUE)
+c(mean((X-mean(X))^3), m3)
+c(mean((X-mean(X))^4), m4)
+```
+
+Подсчет коэффициентов асимметрии и эксцесса по формулам и через библиотеку [совпадают]
+```{r}
+print(paste("skewness: ", m3 / m2 ^ 1.5, " (formula), ", skewness(X), " (lib)"))
+print(paste("kurtosis: ", m4 / m2 ^ 2 - 3, " (formula), ", kurtosis(X) - 3, " (lib; corrected)"))
+```
+```{r}
+gamma1 <- 0
+gamma2 <- - 6/5
+print(paste("excess sk and kur: ", gamma1, gamma2, " (by formulae)"))
+```
+
+
+Характеристики асимметрии и эксцесса в целом соответствуют форме заданного распределения.
+
+
+### Оценка параметров
+#### Метод моментов
+
+Приравниваем выборочные моменты к соответствующим моментам распределения (при 2 неизвестных параметрах, т.е. используем 2 момента): $\alpha_1 = \frac{a+b}{2}$ приравниваем к $\overline{x}$, $\mu_2 = \frac{(b-a)^2}{12}$ приравниваем к $m_2 = \sigma^2$. Получаем 
+$a_{mm} = \overline{x} - \sqrt{3} \sigma$, 
+$b_{mm} = \overline{x} + \sqrt{3} \sigma$
+
+```{r}
+a. <- mean(X) - sqrt(3) * sd(X)
+b. <- mean(X) + sqrt(3) * sd(X)
+c(a.=a., b.=b.)
+```
+
+Моделируем исследуемое распределение с теоретическими и с оценочными (по методу моментов) параметрами. Строим график
+```{r}
+xx. <- runif(1500, min=a., max=b.)
+
+hist(X, freq=FALSE, main="Method of moments")
+lines(density(X), col=2)
+lines(density(xx.), col=3)
+legend('topright', c("hyp","mm"), pch=20, col=c(2,3))
+
+```
+
+#### Метод максимального правдоподобия
+
+Оценки параметров по методу максимального правдоподобия
+```{r}
+Func.prob.log <- function(x) - sum(dunif(X, min = x[1], max = x[2], log = TRUE))
+res <- optim(c(0.97, 3.1), Func.prob.log) # 0.9, 3.1 as initial values
+a.. <- res$par[1]; b.. <- res$par[2];
+c(a..=a.., b..=b..)
+```
+
+Построим график со сравнением теоретического распределения с распределениями, построенными по параметрам, полученным в методах моментов (mm) и максимального правдоподобия (mle)
+```{r}
+xx.. <- runif(1500, min=a.., max=b..)
+
+hist(X, freq=FALSE, main="MM, MLE")
+lines(density(X), col=2)
+lines(density(xx.), col=3)
+lines(density(xx..), col=4)
+legend('topright', c("hyp","mm", "mle"), pch=20, col=c(2,3,4))
+```
+
+Заметим, что оценки, полученные как по методу моментов, так и по методу максимального правдоподобия, достаточно близки к теоретическим. Для получения более точных оценок следует увеличить объем моделируемых данных
+
+### Проверка согласия эмпирического и теоретического распределения по критерию хм-квадрат Пирсона
+
+```{r}
+# эмпирические частоты
+h <- hist(X, plot=FALSE)
+
+# гипотетические частоты
+p.i <- sapply(seq(length(h$breaks)-1) + 1, function(i) punif(h$breaks[i], min=a, max=b) - punif(h$breaks[i-1], min=a, max=b))
+p.i[1] <- punif(h$breaks[2], min=a, max=b)
+p.i[length(p.i)] <- 1 - punif(h$breaks[length(h$breaks) - 1], min=a, max=b)
+sum(p.i) # должно быть равно 1
+
+```
+
+Проверка условия $np_i \geq 5$ (для применения критерия согласия Пирсона)
+```{r}
+tab <- cbind(h$counts, length(X) * p.i); tab
+```
+
+Наблюдаемое значение статистики $\chi^2$
+```{r}
+chi2 <- sum(apply(tab, 1, function(x) (x[1] - x[2])^2 / x[2])); chi2
+```
+
+
+```{r}
+alpha <- 0.05
+p_value <- 1 - pchisq(chi2, nrow(tab) - 2 - 1); 
+print(paste("p_value", round(p_value, 3), sep=" = "))
+if (p_value > alpha) print(paste("The hypothesis of the agreement of the empirical distribution with the theoretical one is not rejected with the significance level alpha", alpha, sep="=")) else print("The hypothesis of the agreement of the empirical distribution with the theoretical one is rejected")
+``` 
+
+$p.value = `r round(p_value, 3)`$, поэтому гипотеза о согласии эмпирического и теоретического распределения НЕ отвергается при заданном $\alpha = `r alpha`$.
+

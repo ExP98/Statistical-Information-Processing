@@ -1,0 +1,365 @@
+---
+title: ""
+output: html_notebook
+---
+
+#### Практическая работа №3
+### Проверка гипотез однородности
+
+> Глушков Егор Александрович, гр. 20.М04-мм
+
+---
+
+Данные (*addicts.xls*). Варианты метрической переменной (*variable*), категориальной с двумя градациями (*factor.2*), категориальной с четырьмя градациями (*factor.4*) представлены в Таблице 2.
+
+* Проверить гипотезу о равенстве дисперсий двух выборок и в соответствии с выводом применить критерий Стьюдента для проверки равенства средних. Использовать вариант группирующей переменной *factor.2* (Табл. 2).
+
+* Применить однофакторный дисперсионный анализ в случае фактора с четырьмя градациями и множественные сравнения с разными поправками. Проверить гипотезу о равенстве дисперсий.
+
+* Повторить обработки с применением непараметрических аналогов.
+
+* Для первых двух зависимых переменных (Табл. 3, данные *dataNF.xls*) проверить однородность изменений во времени по критерию Стьюдента для зависимых выборок и по ранговому критерию Вилкоксона.
+
+* Для зависимых переменных (Табл. 3, данные *dataNF.xls*) с факторами "PRCOD.1" и "SEX.1" выполнить ANOVA Repeated Measures. Проверить значимость факторов "PRCOD.1" и "SEX.1" времени и эффектов взаимодействия.
+
+### Анализ независимых выборок
+
+Переменные (вариант 12):  
+
++ *bdi* -- *variable* -- оценка депрессии
++ *se* -- *factor.2* -- использование успокоительных
++ *educat* -- *factor.4* -- образование
+
+
+```{r}
+library(readxl)
+addicts <- read_excel("addicts.xlsx")
+# View(addicts)
+```
+
+Исследуем переменные на наличие пропусков. Выделим нужные переменные 
+```{r}
+data <- na.omit(addicts[ , c("bdi", "se", "educat")])
+summary(data)
+summary(as.factor(data$se))
+summary(as.factor(data$educat))
+```
+
+```{r}
+library('lawstat')
+
+DescriptiveStat <- function(X, group)
+{
+  mm. <- tapply(X, group, function(x) mean(x, na.rm=TRUE)); mm.
+  sd. <- tapply(X, group, function(x) sd(x, na.rm=TRUE)); sd.
+  nn. <- tapply(X, group, function(x) length(na.omit(x))); nn.
+  err. <- sd./sqrt(nn.); err.
+  list(mm=mm., sd=sd., nn=nn., err=err.)
+}
+
+Fig <- function(x)
+{
+  hist(x, freq=FALSE)
+  f1 <- function(x) dnorm(x, mean(x, na.rm=TRUE), sd(x, na.rm=TRUE))
+  curve(f1, min(x), max(x), col=2, add=TRUE)
+  title(sub=paste("p.Shapiro", format(shapiro.test(x)$p.value, 4, 2), sep="="))
+}
+
+Sentence <- function(mm, err, nn, p.T)
+{
+  A1 <- paste(paste(format(mm, digits=3, nsmall=2), format(err, digits=2, nsmall=2), sep="±"), nn, sep="/")
+  A1. <- paste("The means of two groups are", paste(A1, collapse=", "))
+  A2. <- ifelse(p.T>0.05, "difference is insignificant", "difference is significant" )
+  A3. <- paste("p", format(p.T,3,3),sep="=")
+  paste(c(A1., A2., A3.), collapse=", ")
+}
+```
+
+> Фактор с двумя градациями
+
+Переменная *se* -- группирующая, имеет 2 градации, в роли метрической переменной -- *bdi*
+```{r}
+table(data$se) # 2 градации, группирующая переменная
+df <- data.frame(group=data$se, X=data$bdi)
+```
+
+```{r}
+p.Sh <- with(df, tapply(X, group, function(x)shapiro.test(x)$p.value)); p.Sh
+```
+Согласие с нормальным распределением для обеих групп (градаций) не отвергается в соответствии с критерием Шапиро-Уилка с $p.value$ 0.51 и 0.457 для обеих групп.
+
+```{r}
+boxplot(X~group, df)
+```
+
+```{r}
+p.F <- var.test(X~group, df)$p.value; p.F
+```
+
+В соответствии с критерием Фишера гипотеза о равенстве дисперсий в двух групп не отвергается ($p.value = 0.75$), значит, можно использовать критерий Стьюдента (с параметром о равенстве дисперсий).
+```{r}
+p.T <- t.test(X~group, df, var.equal=TRUE)$p.value; p.T
+```
+По критерию Стьюдента гипотеза о равенстве средних также не отвергается ($p.value = 0.228$).
+
+```{r}
+op <- par(mfrow=c(1,2))
+Fig(df$X[df$group==0])
+Fig(df$X[df$group==1])
+```
+
+```{r}
+par(op)
+df.2 <- df
+
+L <- DescriptiveStat(df$X, df$group)
+Sentence(L$mm, L$err, L$nn, p.T)
+```
+
+> Фактор с четырьмя градациями
+
+Переменная *educat* -- группирующая, имеет 4 градации, в роли метрической переменной -- *bdi*
+```{r}
+df <- data.frame(group=as.factor(data$educat), X=as.numeric(data$bdi))
+table(df$group)
+```
+
+```{r}
+name.gr <- "educat"
+name.x <- "bdi"
+
+bartlett.test(X~group, df)
+```
+
+Критерий Барлетта показывает, что гипотеза о равенстве дисперсий всех выборок не отвергается с $p.value = 0.2953$.
+
+```{r}
+with(df,levene.test(X, group))
+```
+Аналогично критерий Левена показывает, что гипотеза о равенстве дисперсий всех выборок не отвергается с p_value = 0.2341.
+
+---
+
+#### Однофакторный дисперсионный анализ
+
+```{r}
+ao <- aov(X~group, df)
+summary(ao)
+```
+
+```{r}
+boxplot(X~group, xlab=name.gr, ylab=name.x, data=df)
+```
+
+```{r}
+L <- DescriptiveStat(df$X, df$group); L
+```
+Заметим, что средние в каждой из групп примерно равны, критерии выше лишь не опровергают это. При этом различия могут быть объяснены случайностью или малым числом наблюдений в некоторых группах (о чем свидетельствуют параметры nn, sd, err, например, для группы "4").
+
+---
+
+#### Множественные сравнения
+
+```{r}
+library(agricolae)
+library(multcomp)
+
+ao <- aov(X~group, df)
+out <- LSD.test(ao,"group", p.adj="none", group=FALSE); out
+```
+
+Заметим, что p.value позволяет говорить о значимых различиях между группами 2 и 3, с осторожностью -- между 1 и 3. Заметим, что с очень высокой уверенностью можно говорить, что различия между соответственно 1 и 2, 1 и 4, 2 и 4 незначимы. Таким образом, люди с неполным высшим образованием (группа "3") отличаются от группы людей с образованием 8 классов ("1") или полной средней школы ("2"); группа "4" (люди с высшим образованием) схожа с группами "1" и "2" (неполное и полное среднее образование) и в меньшей степени с группой "3" (неполное высшее) в контексте оценки депресии (*bdi*).
+
+Для подтверждения этого составим "контрасты" для общей линейной гипотезы и множественных сравнений (*glht*).
+```{r}
+contr <- rbind(
+  "1 - 234" = c(-1, 1/3, 1/3, 1/3),
+  "2 - 134" = c(1/3, -1, 1/3, 1/3),
+  "3 - 124" = c(1/3, 1/3, -1, 1/3),
+  "4 - 123" = c(1/3, 1/3, 1/3, -1)
+)
+
+GL <- glht(ao, linfct = mcp(group=contr))
+summary(GL)
+```
+Заметно, как среди прочих сравнений "отличаются" группы "3" и "124", однако о различии можно говорить лишь с уровнем значимости в 0.1.
+
+Используем разные поправки для множественных сравнений [которые в итоге дадут схожие между собой результаты, подтверждающие выводы выше].
+```{r}
+out1 <- LSD.test(ao, "group", p.adj = "bonferroni", group=FALSE)
+out2 <- LSD.test(ao, "group", p.adj = "hochberg", group=FALSE)
+out3 <- LSD.test(ao, "group", p.adj = "holm", group=FALSE)
+out4 <- LSD.test(ao, "group", p.adj = "BH", group=FALSE)
+out5 <- LSD.test(ao, "group", p.adj = "fdr", group=FALSE)
+```
+
+```{r}
+out1
+```
+
+```{r}
+pairwise.t.test(data$bdi, data$educat, p.adj = "fdr")
+```
+
+Tukey используется для групп равного объема, поэтому применение здесь некорректно, но ради интереса используем этот метод множественных сравнений средних.
+```{r}
+TukeyHSD(ao, "group", ordered=TRUE)
+```
+
+---
+
+#### Непараметрические критерии однородности для независимых выборок
+
+Критерий Манна-Уитни-Вилкоксона (*exact=FALSE* при объемах выборки больше 30-50)
+```{r}
+wilcox.test(X~group, df.2, exact=FALSE, correct=FALSE)
+```
+Критерий Манна-Уитни с поправкой на непрерывность
+```{r}
+wilcox.test(X~group, df.2, exact=FALSE, correct=TRUE)
+```
+На основании данного критерия можно сделать вывод, что для данных независимых выборок гипотеза об однородности не отвергается при $p.value = 0.204$.
+
+
+Критерий Краскала-Уоллеса для >2 независимых выборок
+```{r}
+kruskal.test(X~group, df)
+```
+Данный критерий не отвергает гипотезу об однородности независимых выборок с $p.value = 0.1456$.
+
+Критерий Краскала с множественными сравнениями и поправкой Бонферрони *[результаты позволяют сделать выводы, аналогичные параметрическим методам множественных сравнений]*.
+```{r}
+library(agricolae)
+comparison <- with(df, kruskal(X, group, p.adj="bonferroni", group=FALSE, main="HR")); comparison
+```
+Медианный тест
+```{r}
+Median.test(df$X, df$group, correct=TRUE, group=TRUE, console=FALSE)$statistics
+```
+
+---
+
+### Анализ зависимых выборок
+
+Данные -- *dataNF*, переменные "BDI.1", "BDI.2", "BDI.3" -- индекс депрессии в разные моменты времени.
+
+```{r}
+library(readxl)
+dataNF <- read_excel("dataNF.xlsx")
+# View(dataNF)
+
+data_dep <- na.omit(dataNF[ , c("BDI.1", "BDI.2", "BDI.3")])
+```
+
+> Критерий Стьюдента для зависимых выборок  
+
+*(paired=TRUE)*
+
+```{r}
+t.test(data_dep$BDI.1, data_dep$BDI.2, paired = TRUE)
+```
+
+```{r}
+c(t.test(data_dep$BDI.1, data_dep$BDI.2, paired = TRUE)$p.value, t.test(data_dep$BDI.2, data_dep$BDI.3, paired = TRUE)$p.value)
+```
+По результатам критерия Стьюдента для зависимых выборок гипотеза об однородности изменений во времени отвергается с уровнями значисмости 1.137555e-24 и 4.269685e-11 при сравнении моментов времени 1 и 2; 2 и 3 соответственно (т.е. истинная разность средних не равна 0).
+
+---
+
+> Критерий Вилкоксона для зависимых выборок
+
+```{r}
+c(wilcox.test(data_dep$BDI.1, data_dep$BDI.2, paired=TRUE, exact = FALSE)$p.value, wilcox.test(data_dep$BDI.2, data_dep$BDI.3, paired=TRUE, exact = FALSE)$p.value)
+```
+Аналогично критерию Стьюдента, критерий Вилкоксона отвергает гипотезу об однородности изменений во времени с $p.value = 4.195681e-21; 1.693720e-11$ при сравненении моментов времени 1 и 2, 2 и 3.
+
+---
+
+> Критерий $\chi^2$-Фридмана для нескольких выборок
+
+```{r}
+friedman.test(as.matrix(data_dep))
+```
+Непараметрический критерий Фридмана также отвергает гипотезу об однородности "BDI.1", "BDI.2", "BDI.3"
+
+---
+
+> ANOVA Repeated Measures
+
+Используем модель двухфакторного дисперсионного анализа с повторениями -- ANOVA Repeated Measures.
+В качестве группирующих переменных -- "PRCOD.1" и "SEX.1"
+
+```{r}
+dat.AR <- na.omit(dataNF[ , c("PRCOD.1", "SEX.1", "BDI.1", "BDI.3", "BDI.4", "BDI.6")])
+
+k <- 2
+m <- ncol(dat.AR)-k; m
+dat.AR.T <- data.frame(
+    stack(dat.AR[,-seq(k)]),
+    sub=as.factor(rep(seq(nrow(dat.AR)), m)),
+    gr1=as.factor(rep(dat.AR$PRCOD.1, m)),
+    gr2=as.factor(rep(dat.AR$SEX.1, m))
+  )
+
+# anova_rm <- aov(values ~ (gr1 + gr2) * ind + Error(sub), dat.AR.T)
+anova_rm <- aov(values ~ gr1*gr2 + gr1 + gr2, dat.AR.T)
+sarm <- summary(anova_rm); sarm
+```
+
+Исследуем значимость факторов и эффектов взаимодействия
+```{r}
+Df <- sarm[[1]][, 1]
+MS <- sarm[[1]][, 3]
+
+p.gr1 <- 1 - pf(MS[1] / MS[4], Df[1], Df[4])
+p.gr2 <- 1 - pf(MS[2] / MS[4], Df[2], Df[4])
+p.gr12 <- 1 - pf(MS[3] / MS[4], Df[3], Df[4])
+c(p.gr1, p.gr2, p.gr12)
+c(sarm[[1]][, 5][1:3])
+
+```
+$p > 0.05$, то соответствующий эффект отсутствует.
+
+* Фактор взаимодействия не значим (при нулевой гипотезе об отсутствии эффекта фактора взаимодействия на индекс депрессии BDI $p.value_{gr1:gr2} = 0.957$, значит, отсутствие эффекта не отвергается, фактор взаимодействия не значим).
+
+* Аналогично отсутствует эффект фактора пола -- *SEX.1* -- на индекс депрессии с $p.value_{sex.1}= 0.21$, фактор не значим.
+
+* $p.value_{prcod.1}= 0.0147$, то влияние фактора *PRCOD.1* значимо для индекса депрессии, средние в группах по данному фактору значимо различаются (так как нулевая гипотеза гласит об отсутствии влияния).
+
+```{r}
+model.tables(anova_rm, 'mean')
+```
+
+```{r}
+Names <- names(table(dat.AR[,1]))
+K <- length(Names)
+
+interaction.plot(x.factor=dat.AR.T$ind,
+  trace.factor=dat.AR.T$gr1,
+  response=dat.AR.T$values,
+  fun = mean,
+  type = "b", legend = FALSE,
+  trace.label ="group",
+  xlab = "",
+  ylab = 'PRCOD.1',
+  lty = seq(K), col = seq(K), pch = 20, lwd = 2
+)
+legend('topright', Names, lty=seq(K), col=seq(K), cex=0.7, pch=20)
+```
+
+```{r}
+Names <- names(table(dat.AR[,2]))
+
+interaction.plot(x.factor=dat.AR.T$ind,
+  trace.factor=dat.AR.T$gr2,
+  response=dat.AR.T$values,
+  fun = mean,
+  type = "b", legend = FALSE,
+  trace.label ="group",
+  xlab = "",
+  ylab = 'SEX.1',
+  lty = seq(K), col = seq(K), pch = 20, lwd = 2
+)
+legend('topright', Names, lty=seq(K), col=seq(K), cex=0.7, pch=20)
+```
+
